@@ -55,6 +55,13 @@ jobs:
           cache: npm
           registry-url: "https://registry.npmjs.org"
 
+      # Trusted publishing (OIDC): no NPM_TOKEN anywhere. Configured on
+      # npmjs.com → plexus-typescript → Settings → Trusted publisher →
+      # GitHub Actions (plexus-oss/plexus-typescript, publish.yml).
+      # Needs npm >= 11.5; Node 20 bundles npm 10, so upgrade first.
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@latest
+
       - name: Install dependencies
         run: npm ci
 
@@ -66,5 +73,3 @@ jobs:
 
       - name: Publish to npm
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
