@@ -168,7 +168,6 @@ describe("Plexus.send", () => {
       device_type: "service",
     });
   });
-
 });
 
 describe("event()", () => {
