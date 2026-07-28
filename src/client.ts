@@ -20,7 +20,10 @@ import { VERSION } from "./version.js";
 interface IngestResponse {
   success?: boolean;
   count?: number;
-  /** Echoed for single-source batches; may be suffixed on collision. */
+  /**
+   * Echoed unchanged for single-source batches (gateway auto-suffixing was
+   * removed); the SDK's adoption of it is kept as forward-compat only.
+   */
   source_id?: string;
   error?: string;
 }
@@ -30,15 +33,21 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /**
  * Plexus telemetry client (HTTP transport, plexus-python parity).
  *
- * Delivery semantics: points are sent immediately; on delivery failure they
- * are buffered (FIFO, drop-oldest) and prepended to the next send. `send()`
- * resolves `true` on delivery and `false` on a buffered failure — it only
- * REJECTS on programmer error (bad metric/source) or authentication failure
- * (fatal misconfiguration). This is a deliberate divergence from the Python
- * SDK (which raises on any exhausted retry): JS telemetry calls are routinely
- * fire-and-forget, and an unhandled rejection per network blip is hostile.
+ * Delivery semantics: points are sent immediately, in chunks of at most 5000
+ * (the gateway rejects batches over 10k points with a non-retryable 400, so
+ * a grown backlog must drain in bounded requests). On delivery failure —
+ * network, 5xx/429 after retries, or a non-auth 4xx rejection — the unsent
+ * points are buffered (FIFO, drop-oldest) and prepended to the next send.
+ * `send()` resolves `true` on delivery and `false` on a buffered failure —
+ * it only REJECTS on programmer error (bad metric/source) or authentication
+ * failure (401/403, fatal misconfiguration). This is a deliberate divergence
+ * from the Python SDK (which raises on any exhausted retry): JS telemetry
+ * calls are routinely fire-and-forget, and an unhandled rejection per
+ * network blip is hostile.
  *
- * No request gzip: the gateway's HTTP handler does not decompress bodies.
+ * No request gzip in v1: the gateway's ingest handler does transparently
+ * decompress `Content-Encoding: gzip` bodies (plexus-python compresses >1KB
+ * payloads) — this SDK just doesn't compress yet.
  * No WebSocket transport in v1 (the `/ws/device` contract is the v1.1 seam).
  */
 export class Plexus {
@@ -97,7 +106,11 @@ export class Plexus {
     return this.resolved;
   }
 
-  /** The effective source slug (may be gateway-suffixed after first send). */
+  /**
+   * The effective source slug. The gateway echoes the declared source_id
+   * back unchanged (auto-suffixing was removed); the echo is still adopted
+   * as forward-compat, so this normally always equals the configured slug.
+   */
   get source(): string | undefined {
     return this.sourceId;
   }
@@ -171,11 +184,38 @@ export class Plexus {
 
   // ── internals ──────────────────────────────────────────────────────────
 
+  /**
+   * Gateway hard cap is 10k points per batch (a non-retryable 400 beyond
+   * that). Sending in chunks well under it means a backlog that grew to the
+   * buffer cap can always drain instead of wedging behind one giant POST.
+   */
+  private static readonly SEND_CHUNK_POINTS = 5000;
+
   private async sendPoints(fresh: Point[]): Promise<boolean> {
     await this.ensureResolved();
-    const points = [...this.buffer.drain(), ...fresh];
-    if (points.length === 0) return true;
+    let pending = [...this.buffer.drain(), ...fresh];
 
+    while (pending.length > 0) {
+      const chunk = pending.slice(0, Plexus.SEND_CHUNK_POINTS);
+      const delivered = await this.sendChunk(chunk);
+      if (!delivered) {
+        // Re-buffer the failed chunk AND everything not yet attempted —
+        // resolve-false-on-failure semantics, nothing dropped.
+        this.buffer.add(pending);
+        return false;
+      }
+      pending = pending.slice(chunk.length);
+    }
+    return true;
+  }
+
+  /**
+   * POST one chunk (≤ SEND_CHUNK_POINTS) with retries. Returns `true` on
+   * delivery, `false` on any non-auth failure — including non-retryable 4xx
+   * rejections — so the caller can re-buffer. Throws only
+   * `AuthenticationError` (401/403, fatal misconfiguration).
+   */
+  private async sendChunk(points: Point[]): Promise<boolean> {
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.retry.maxRetries; attempt++) {
       try {
@@ -200,28 +240,27 @@ export class Plexus {
         }
         if (res.ok) {
           const body = (await res.json().catch(() => ({}))) as IngestResponse;
-          // Gateway may suffix the slug on collision; its answer is
-          // authoritative for every subsequent send.
+          // The gateway echoes the declared source_id back unchanged
+          // (auto-suffixing was removed); adoption kept as forward-compat.
           if (body.source_id && body.source_id !== this.sourceId) {
             this.sourceId = body.source_id;
           }
           void this.declareKindOnce();
           return true;
         }
-        if (!isRetryableStatus(res.status)) {
-          const body = (await res.json().catch(() => ({}))) as IngestResponse;
-          throw new PlexusError(
-            body.error ?? `Ingest failed (${res.status})`,
-            res.status,
-          );
-        }
+        const body = (await res.json().catch(() => ({}))) as IngestResponse;
         lastError = new PlexusError(
-          `Ingest failed (${res.status})`,
+          body.error ?? `Ingest failed (${res.status})`,
           res.status,
         );
+        // Non-retryable 4xx is final for this attempt loop, but it is a
+        // delivery failure, not a programmer error — buffer, don't reject
+        // (fire-and-forget callers must never see an unhandled rejection).
+        if (!isRetryableStatus(res.status)) break;
       } catch (err) {
-        // Programmer/auth/4xx errors propagate; network/timeouts retry.
-        if (err instanceof PlexusError) throw err;
+        // Auth errors propagate (fatal misconfiguration); network errors
+        // and timeouts retry.
+        if (err instanceof AuthenticationError) throw err;
         lastError = err;
       }
       if (attempt < this.retry.maxRetries) {
@@ -229,7 +268,6 @@ export class Plexus {
       }
     }
 
-    this.buffer.add(points);
     if (lastError) {
       console.warn(
         `[plexus] send failed, ${points.length} points buffered:`,

@@ -51,7 +51,9 @@ describe("Plexus.send", () => {
     });
   });
 
-  it("adopts the gateway's suffixed source_id echo", async () => {
+  // The gateway echoes source_id unchanged (suffixing was removed);
+  // adoption of a differing echo is kept as forward-compat.
+  it("adopts a differing source_id echo (forward-compat)", async () => {
     const fetchMock: FetchMock = vi.fn(async () =>
       jsonResponse(200, { success: true, count: 1, source_id: "svc-1_2" }),
     );
@@ -105,6 +107,46 @@ describe("Plexus.send", () => {
     expect(lastBody.points.map((p: { value: number }) => p.value)).toEqual([
       1, 2,
     ]);
+  });
+
+  it("re-buffers and resolves false on a non-auth 4xx (no rejection)", async () => {
+    const fetchMock: FetchMock = vi.fn(async () =>
+      jsonResponse(400, { error: "bad payload" }),
+    );
+    const px = makeClient(fetchMock);
+
+    // Previously this threw AND dropped the drained points.
+    await expect(px.send("m", 1)).resolves.toBe(false);
+    expect(px.bufferSize).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1); // non-retryable — no retries
+
+    fetchMock.mockResolvedValue(jsonResponse(200, { success: true, count: 2 }));
+    await expect(px.send("m", 2)).resolves.toBe(true);
+    expect(px.bufferSize).toBe(0);
+    const lastBody = JSON.parse(
+      (fetchMock.mock.calls.at(-1)![1] as RequestInit).body as string,
+    );
+    expect(lastBody.points).toHaveLength(2); // buffered point recovered
+  });
+
+  it("splits large batches into ≤5000-point chunks", async () => {
+    const fetchMock: FetchMock = vi.fn(async () =>
+      jsonResponse(200, { success: true }),
+    );
+    const px = makeClient(fetchMock);
+
+    await expect(
+      px.sendBatch(
+        Array.from({ length: 10_001 }, (_, i) => [`m`, i] as [string, number]),
+      ),
+    ).resolves.toBe(true);
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const sizes = fetchMock.mock.calls.map(
+      ([, init]) =>
+        JSON.parse((init as RequestInit).body as string).points.length,
+    );
+    expect(sizes).toEqual([5000, 5000, 1]);
   });
 
   it("declares kind once via PATCH after the first successful send", async () => {

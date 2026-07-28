@@ -61,13 +61,13 @@ plexus.event("signup", { plan: "team" });
 ## Key Conventions
 
 - API keys are prefixed with `plx_`; sent as the `x-api-key` header
-- HTTP ingest → `POST /ingest` on the gateway (only transport in v1; WebSocket is the v1.1 seam; no request gzip)
+- HTTP ingest → `POST /ingest` on the gateway (only transport in v1; WebSocket is the v1.1 seam; this SDK does not gzip request bodies yet, though the gateway transparently decompresses them)
 - Gateway resolves `org_id` server-side from the API key — clients do not supply it
 - Wire timestamps are **milliseconds** since epoch; numeric values `< 1e12` are auto-scaled from seconds; `Date` objects accepted
 - Source slugs must match `^[a-z0-9][a-z0-9._-]*$` (max 256 chars) and must **not** be uuid-shaped (the app resolves uuid-shaped refs as internal ids)
-- Gateway may suffix the slug on collision; the SDK adopts the echoed `source_id` for subsequent sends
+- Gateway echoes the declared `source_id` back unchanged (auto-suffixing was removed); the SDK's adoption of the echo is kept as forward-compat only
 - `~/.plexus/config.json` is read-only from this SDK (the Python SDK writes it)
-- `send()` resolves `false` on delivery failure (points buffered in-memory, FIFO drop-oldest, default 10,000); it rejects only on programmer error or 401/403 (`AuthenticationError`)
+- `send()` resolves `false` on delivery failure — including non-auth 4xx rejections — with points buffered in-memory (FIFO drop-oldest, default 10,000); it rejects only on programmer error or 401/403 (`AuthenticationError`). Sends go out in chunks of ≤5000 points (gateway caps batches at 10k)
 
 ## Exports
 

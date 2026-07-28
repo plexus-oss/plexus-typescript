@@ -165,7 +165,7 @@ Your code ── px.send() ── HTTP POST /ingest ──> plexus-gateway ─�
 ```
 
 - **HTTP only in v1.** `POST /ingest` with `x-api-key`. A WebSocket transport (the gateway's `/ws/device` contract — lower latency, live command delivery) is the planned v1.1 seam.
-- **No request gzip — deliberate.** The gateway's HTTP handler does not decompress request bodies; compressed payloads would be rejected, not helped.
+- **No request gzip in v1.** The gateway's ingest handler transparently decompresses `Content-Encoding: gzip` bodies (plexus-python compresses >1KB payloads); this SDK simply doesn't compress yet.
 - The gateway resolves `org_id` server-side from the API key; clients never supply it.
 
 ## License
