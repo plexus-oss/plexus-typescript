@@ -49,21 +49,20 @@ describe("class inference + buildPoint", () => {
     expect(inferClass({ a: 1 })).toBe("event");
     expect(inferClass(true)).toBe("event");
   });
-  it("builds wire points with class, tags, run_id", () => {
-    const p = buildPoint("temp", 21.5, { tags: { cell: "A1" } }, "run-9");
+  it("builds wire points with class and tags", () => {
+    const p = buildPoint("temp", 21.5, { tags: { cell: "A1" } });
     expect(p).toMatchObject({
       class: "metric",
       metric: "temp",
       value: 21.5,
       tags: { cell: "A1" },
-      run_id: "run-9",
     });
     expect(typeof p.timestamp).toBe("number");
   });
   it("rejects empty metric and non-finite metric values", () => {
-    expect(() => buildPoint("", 1, undefined, undefined)).toThrow(PlexusError);
-    expect(() =>
-      buildPoint("temp", NaN, { class: "metric" }, undefined),
-    ).toThrow(PlexusError);
+    expect(() => buildPoint("", 1)).toThrow(PlexusError);
+    expect(() => buildPoint("temp", NaN, { class: "metric" })).toThrow(
+      PlexusError,
+    );
   });
 });

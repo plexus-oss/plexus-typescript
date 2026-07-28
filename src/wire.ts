@@ -45,8 +45,7 @@ export function inferClass(value: FlexValue): PointClass {
 export function buildPoint(
   metric: string,
   value: FlexValue,
-  opts: SendOptions | undefined,
-  runId: string | undefined,
+  opts?: SendOptions,
 ): Point {
   if (!metric) throw new PlexusError("metric is required");
   const cls = opts?.class ?? inferClass(value);
@@ -65,6 +64,5 @@ export function buildPoint(
     timestamp: normalizeTimestampMs(opts?.timestamp),
   };
   if (opts?.tags) point.tags = opts.tags;
-  if (runId) point.run_id = runId;
   return point;
 }

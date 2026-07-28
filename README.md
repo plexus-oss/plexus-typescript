@@ -72,16 +72,6 @@ await px.sendBatch([
 
 Each entry is `[metric, value]` or `[metric, value, timestamp]`. All points land in one network call.
 
-### `run(runId, fn)` — group data into a named recording
-
-```ts
-await px.run("thermal-cycle-001", async () => {
-  while (running) await px.send("temperature", readTemp());
-});
-```
-
-Every point sent inside `fn` is tagged with `run_id`. Run start/end are announced to the app best-effort; bookkeeping failures never break telemetry.
-
 ### `flush()` / `close()`
 
 `flush()` sends everything sitting in the failure buffer. `close()` is a final best-effort flush — call it on shutdown; safe to call multiple times.

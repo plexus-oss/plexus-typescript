@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Removed
+
+- `run()` and the internal `notifyRun()` `POST /api/runs` plumbing. The `/api/runs` route
+  never existed on the platform (notifications failed silently on every call), the ingest
+  loader drops `run_id` from points, and nothing was ever stored — removal loses no data.
+  Use `tags` on each point to group a slice of data. `Point.run_id` is gone from the wire
+  types accordingly.
+
 ## [0.1.0] - 2026-07-20 - Initial release
 
 ### Added

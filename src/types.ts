@@ -12,7 +12,6 @@ export interface Point {
   /** Milliseconds since epoch. */
   timestamp: number;
   tags?: Record<string, string>;
-  run_id?: string;
   source_id?: string;
 }
 
@@ -44,7 +43,7 @@ export interface PlexusOptions {
   sourceId?: string;
   /** Ingest gateway. Default https://gateway.plexus.company */
   gatewayUrl?: string;
-  /** Product app (runs + kind declaration). Default https://app.plexus.company */
+  /** Product app (kind declaration). Default https://app.plexus.company */
   endpoint?: string;
   /** Per-request timeout in ms (default 10000). */
   timeoutMs?: number;

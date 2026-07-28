@@ -33,11 +33,6 @@ await px.sendBatch([
   ["pressure", 1013.25],
 ]);
 
-// Named recording
-await px.run("load-test-001", async () => {
-  await px.send("rps", 1200);
-});
-
 await px.close(); // final best-effort flush
 ```
 

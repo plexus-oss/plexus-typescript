@@ -60,7 +60,6 @@ export class Plexus {
   private readonly buffer: MemoryBuffer;
   private readonly kind: string | undefined;
   private kindDeclared = false;
-  private runId: string | undefined;
   private resolved: Promise<void> | undefined;
 
   constructor(private readonly options: PlexusOptions = {}) {
@@ -124,7 +123,7 @@ export class Plexus {
     value: FlexValue,
     opts?: SendOptions,
   ): Promise<boolean> {
-    return this.sendPoints([buildPoint(metric, value, opts, this.runId)]);
+    return this.sendPoints([buildPoint(metric, value, opts)]);
   }
 
   /** Convenience for `class: "event"` points. */
@@ -134,7 +133,7 @@ export class Plexus {
     opts?: Omit<SendOptions, "class">,
   ): Promise<boolean> {
     return this.sendPoints([
-      buildPoint(name, data, { ...opts, class: "event" }, this.runId),
+      buildPoint(name, data, { ...opts, class: "event" }),
     ]);
   }
 
@@ -146,30 +145,12 @@ export class Plexus {
   ): Promise<boolean> {
     return this.sendPoints(
       points.map(([metric, value, ts]) =>
-        buildPoint(
-          metric,
-          value,
-          { ...opts, ...(ts !== undefined ? { timestamp: ts } : {}) },
-          this.runId,
-        ),
+        buildPoint(metric, value, {
+          ...opts,
+          ...(ts !== undefined ? { timestamp: ts } : {}),
+        }),
       ),
     );
-  }
-
-  /**
-   * Tag every point inside `fn` with a run id. Start/end are announced to the
-   * app's /api/runs best-effort (failures swallowed — Python parity).
-   */
-  async run<T>(runId: string, fn: () => Promise<T> | T): Promise<T> {
-    await this.ensureResolved();
-    await this.notifyRun(runId, "started");
-    this.runId = runId;
-    try {
-      return await fn();
-    } finally {
-      this.runId = undefined;
-      await this.notifyRun(runId, "ended");
-    }
   }
 
   /** Send everything sitting in the failure buffer. */
@@ -297,30 +278,6 @@ export class Plexus {
       });
     } catch {
       // Best-effort; the source just stays a generic device.
-    }
-  }
-
-  private async notifyRun(
-    runId: string,
-    status: "started" | "ended",
-  ): Promise<void> {
-    try {
-      await fetch(`${this.endpoint}/api/runs`, {
-        method: "POST",
-        headers: {
-          "x-api-key": this.apiKey!,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          run_id: runId,
-          source_id: this.sourceId,
-          status,
-          timestamp: Math.floor(Date.now() / 1000),
-        }),
-        signal: AbortSignal.timeout(this.timeoutMs),
-      });
-    } catch {
-      // Run bookkeeping must never break telemetry.
     }
   }
 }

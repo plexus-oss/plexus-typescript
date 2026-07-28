@@ -169,25 +169,6 @@ describe("Plexus.send", () => {
     });
   });
 
-  it("tags points with run_id inside run()", async () => {
-    const fetchMock: FetchMock = vi.fn(async () =>
-      jsonResponse(200, { success: true, count: 1 }),
-    );
-    const px = makeClient(fetchMock);
-    await px.run("run-42", async () => {
-      await px.send("m", 1);
-    });
-    const ingest = fetchMock.mock.calls.filter(([u]) =>
-      String(u).endsWith("/ingest"),
-    );
-    const body = JSON.parse((ingest[0]![1] as RequestInit).body as string);
-    expect(body.points[0].run_id).toBe("run-42");
-    // start + end notifications went to /api/runs
-    const runs = fetchMock.mock.calls.filter(([u]) =>
-      String(u).endsWith("/api/runs"),
-    );
-    expect(runs).toHaveLength(2);
-  });
 });
 
 describe("event()", () => {
